@@ -609,14 +609,25 @@ public class StandardOPCUAService extends AbstractControllerService implements O
 
             Long clientHandleLong = clientHandles.getAndIncrement();
             UInteger clientHandle = uint(clientHandleLong);
+	    MonitoringParameters parameters = null;
 
-            MonitoringParameters parameters = new MonitoringParameters(
+	    if(df != null) {
+            	parameters = new MonitoringParameters(
                     clientHandle,
                     300.0,     // sampling interval
                     ExtensionObject.encode(df),       // filter, null means use default
                     uint(10),   // queue size
                     true        // discard oldest
-            );
+            	);
+	    } else {
+               parameters = new MonitoringParameters(
+                    clientHandle,
+                    300.0,     // sampling interval
+                    null,       // filter, null means use default
+                    uint(10),   // queue size
+                    true        // discard oldest
+                );
+	    }
 
             micrList.add(new MonitoredItemCreateRequest(
                     readValueId, MonitoringMode.Reporting, parameters));
