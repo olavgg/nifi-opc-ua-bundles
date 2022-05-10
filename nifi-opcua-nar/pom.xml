@@ -44,11 +44,17 @@
             <artifactId>nifi-opcua-service-api</artifactId>
             <version>1.0</version>
         </dependency>
+      	<dependency>
+		  <groupId>org.apache.nifi</groupId>
+		  <artifactId>nifi-standard-services-api-nar</artifactId>
+		  <version>1.12.0</version>
+		  <type>nar</type>
+		</dependency>
         <!--<dependency>
             <groupId>de.fraunhofer.fit</groupId>
             <artifactId>nifi-opcua-service</artifactId>
             <version>1.0</version>
         </dependency>-->
     </dependencies>
-
+		
 </project>

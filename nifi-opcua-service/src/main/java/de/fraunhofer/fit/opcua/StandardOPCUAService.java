@@ -33,15 +33,21 @@ import org.eclipse.milo.opcua.sdk.client.api.config.OpcUaClientConfigBuilder;
 import org.eclipse.milo.opcua.sdk.client.api.identity.AnonymousProvider;
 import org.eclipse.milo.opcua.sdk.client.api.identity.IdentityProvider;
 import org.eclipse.milo.opcua.sdk.client.api.identity.UsernameProvider;
-import org.eclipse.milo.opcua.sdk.client.api.nodes.Node;
+import org.eclipse.milo.opcua.sdk.client.nodes.UaNode;
 import org.eclipse.milo.opcua.sdk.client.api.subscriptions.UaMonitoredItem;
 import org.eclipse.milo.opcua.sdk.client.api.subscriptions.UaSubscription;
+import org.eclipse.milo.opcua.sdk.client.api.subscriptions.UaSubscription.ItemCreationCallback;
 import org.eclipse.milo.opcua.sdk.client.api.subscriptions.UaSubscriptionManager;
-import org.eclipse.milo.opcua.stack.client.UaTcpStackClient;
+import org.eclipse.milo.opcua.stack.client.DiscoveryClient;
 import org.eclipse.milo.opcua.stack.core.AttributeId;
 import org.eclipse.milo.opcua.stack.core.Identifiers;
+import org.eclipse.milo.opcua.stack.core.NamespaceTable;
 import org.eclipse.milo.opcua.stack.core.UaException;
 import org.eclipse.milo.opcua.stack.core.security.SecurityPolicy;
+import org.eclipse.milo.opcua.stack.core.channel.EncodingLimits;
+import org.eclipse.milo.opcua.stack.core.serialization.SerializationContext;
+import org.eclipse.milo.opcua.stack.core.types.DataTypeManager;
+import org.eclipse.milo.opcua.stack.core.types.OpcUaDataTypeManager;
 import org.eclipse.milo.opcua.stack.core.types.builtin.*;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger;
 import org.eclipse.milo.opcua.stack.core.types.enumerated.DataChangeTrigger;
@@ -58,10 +64,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.BiConsumer;
 
 import static org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.Unsigned.uint;
 
@@ -181,7 +185,15 @@ public class StandardOPCUAService extends AbstractControllerService implements O
             .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
             .build();
-
+    
+    public static final PropertyDescriptor TIMEOUT = new PropertyDescriptor
+            .Builder().name("Request timeout")
+            .description("Request timeout period in milliseconds. Must be a positive integer.")
+            .required(true)
+            .defaultValue("5000")
+            .addValidator(StandardValidators.INTEGER_VALIDATOR)
+            .build();
+    
     private static final List<PropertyDescriptor> properties;
 
     private OpcUaClient opcClient;
@@ -204,6 +216,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
         props.add(USERNAME);
         props.add(PASSWORD);
         props.add(USE_PROXY);
+        props.add(TIMEOUT);
         properties = Collections.unmodifiableList(props);
     }
 
@@ -259,8 +272,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
         }
 
         try {
-            EndpointDescription[] endpoints =
-                    UaTcpStackClient.getEndpoints(endpoint).get();
+        	List<EndpointDescription> endpoints = DiscoveryClient.getEndpoints(endpoint).get();
 
             EndpointDescription endpointDescription = chooseEndpoint(endpoints, minSecurityPolicy, minSecurityMode);
 
@@ -270,7 +282,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
                         "You specified security mode: %s, security policy: %s\n" +
                         "Available combinations: \n",
                         minSecurityMode.name(),
-                        minSecurityPolicy.getSecurityPolicyUri()));
+                        minSecurityPolicy.getUri()));
 
                 for(EndpointDescription ed : endpoints) {
                     sb.append(String.format("security mode: %s, security policy: %s\n",
@@ -297,6 +309,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
             }
 
             cfgBuilder.setEndpoint(endpointDescription);
+            cfgBuilder.setRequestTimeout(uint(context.getProperty(TIMEOUT).asInteger()));
             if (!context.getProperty(SECURITY_POLICY).getValue().equals("None")) {  // If security policy is used
 
                 // clientKsLocation has already been validated, no need to check again
@@ -329,8 +342,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
                 KeyStoreLoader loader = new KeyStoreLoader().load(clientKsLocation, clientKsPassword);
 
                 cfgBuilder.setCertificate(loader.getClientCertificate())
-                        .setKeyPair(loader.getClientKeyPair())
-                        .setRequestTimeout(uint(5000));
+                        .setKeyPair(loader.getClientKeyPair());
             }
 
             String authType = context.getProperty(AUTH_POLICY).getValue();
@@ -352,7 +364,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
                 cfgBuilder.setProductUri(applicationUri);
             }
 
-            opcClient = new OpcUaClient(cfgBuilder.build());
+            opcClient = OpcUaClient.create(cfgBuilder.build());
             opcClient.connect().get(5, TimeUnit.SECONDS);
 
             if (subscriptionMap == null) {
@@ -510,7 +522,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
 
     // Choose the proper endpoint from discovered endpoints according to security settings
     private EndpointDescription chooseEndpoint(
-            EndpointDescription[] endpoints,
+    		List<EndpointDescription> endpoints,
             SecurityPolicy minSecurityPolicy,
             MessageSecurityMode minMessageSecurityMode) {
 
@@ -538,7 +550,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
         //getLogger().info(indent + " Node=" + node.getNodeId().get().getIdentifier().toString());
 
         try {
-            List<Node> nodes = client.getAddressSpace().browse(browseRoot).get();
+            List<? extends UaNode> nodes = client.getAddressSpace().browseNodes(browseRoot);
 
             if (printNonLeafNode || nodes.size() == 0) {
                 builder.append(currentIndent)
@@ -553,19 +565,19 @@ public class StandardOPCUAService extends AbstractControllerService implements O
 
                 int currNodeCount = 0;
 
-                for (Node node : nodes) {
+                for (UaNode node : nodes) {
                     if (currNodeCount == maxRefPerNode)
                         break;
 
                     // recursively browse to children
                     browseNodeIteratively(newIndent, indentString, remainDepth, maxRefPerNode, printNonLeafNode,
-                            client, node.getNodeId().get(), builder);
+                            client, node.getNodeId(), builder);
 
                     currNodeCount++;
                 }
             }
 
-        } catch (InterruptedException | ExecutionException e) {
+        } catch (UaException e) {
             getLogger().error("Browsing nodeId=" + browseRoot + " failed: " + e.getMessage());
         }
 
@@ -602,9 +614,10 @@ public class StandardOPCUAService extends AbstractControllerService implements O
 
     private void createMonitorItems(UaSubscription uaSubscription, List<ReadValueId> readValueIds,
                                     BlockingQueue<String> queue, DataChangeFilter df) throws Exception {
-
+    	
         // Create a list of MonitoredItemCreateRequest
         ArrayList<MonitoredItemCreateRequest> micrList = new ArrayList<>();
+        SerializationContext context = newDefaultSerializationContext();
         readValueIds.forEach((readValueId) -> {
 
             Long clientHandleLong = clientHandles.getAndIncrement();
@@ -615,7 +628,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
             	parameters = new MonitoringParameters(
                     clientHandle,
                     300.0,     // sampling interval
-                    ExtensionObject.encode(df),       // filter, null means use default
+                    ExtensionObject.encode(context, df),       // filter, null means use default
                     uint(10),   // queue size
                     true        // discard oldest
             	);
@@ -635,7 +648,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
         });
 
         // This is the callback when the MonitoredItem is created. In this callback, we set the consumer for incoming values
-        BiConsumer<UaMonitoredItem, Integer> onItemCreated =
+        ItemCreationCallback onItemCreated =
                 (item, id) -> item.setValueConsumer((it, value) -> {
                     getLogger().debug("subscription value received: item=" + it.getReadValueId().getNodeId()
                             + " value=" + value.getValue());
@@ -643,9 +656,9 @@ public class StandardOPCUAService extends AbstractControllerService implements O
                             "Both", value, false, "");
 
                     queue.offer(valueLine);
-                });
-
-        List<UaMonitoredItem> items = uaSubscription.createMonitoredItems(
+                });          
+                
+        List<UaMonitoredItem> items =  uaSubscription.createMonitoredItems(
                 TimestampsToReturn.Both,
                 micrList,
                 onItemCreated
@@ -723,6 +736,31 @@ public class StandardOPCUAService extends AbstractControllerService implements O
         return valueLine.toString();
     }
 
+    
+    private static SerializationContext newDefaultSerializationContext() {
+        return new SerializationContext() {
+
+            private final NamespaceTable namespaceTable = new NamespaceTable();
+
+            @Override
+            public EncodingLimits getEncodingLimits() {
+                return EncodingLimits.DEFAULT;
+            }
+
+            @Override
+            public NamespaceTable getNamespaceTable() {
+                return namespaceTable;
+            }
+
+            @Override
+            public DataTypeManager getDataTypeManager() {
+                return OpcUaDataTypeManager.getInstance();
+            }
+
+        };
+    }
+
+    
     // Special class as container to wrap subscription with the queue connected to a SubscribeOPCUANodes processor
     private static class SubscriptionConfig {
 
@@ -755,6 +793,8 @@ public class StandardOPCUAService extends AbstractControllerService implements O
         public void onSubscriptionTransferFailed(UaSubscription subscription, StatusCode statusCode) {
             getLogger().warn("Subscription transfer failed: "+ statusCode + ". Trying to recreate subscription...");
 
+            SerializationContext context = newDefaultSerializationContext();
+            
             // Get config from subscription object
             long minPublishInterval = (long) subscription.getRequestedPublishingInterval();
             BlockingQueue<String> queue = subscriptionMap.get(subscription.getSubscriptionId().toString())
@@ -762,7 +802,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
             List<ReadValueId> readValueIds = new ArrayList<>();
             DataChangeFilter df = null;
             for(UaMonitoredItem mi : subscription.getMonitoredItems()) {
-                if(df == null) df = mi.getMonitoringFilter().decode();
+                if(df == null) df = (DataChangeFilter) mi.getMonitoringFilter().decode(context);
                 readValueIds.add(mi.getReadValueId());
             }
 
@@ -780,5 +820,5 @@ public class StandardOPCUAService extends AbstractControllerService implements O
             }
         }
     }
-
+    
 }

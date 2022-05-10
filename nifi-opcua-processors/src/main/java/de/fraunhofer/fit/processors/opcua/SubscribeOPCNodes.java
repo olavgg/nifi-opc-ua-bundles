@@ -220,13 +220,10 @@ public class SubscribeOPCNodes extends AbstractProcessor {
 
     }
 
-    @OnStopped
+	@OnStopped
     public void onStopped(final ProcessContext context) {
-
-        getLogger().debug("Unsubscribing from OPC Server...");
-        opcUaService.unsubscribe(subscriberUid);
-
-    }
+		unsubscribe();
+	}
 
     private List<String> parseFile(Path filePath) throws IOException {
         byte[] encoded;
@@ -234,4 +231,10 @@ public class SubscribeOPCNodes extends AbstractProcessor {
         String fileContent = new String(encoded, Charset.defaultCharset());
         return new BufferedReader(new StringReader(fileContent)).lines().collect(Collectors.toList());
     }
+    
+    private void unsubscribe() {
+    	getLogger().debug("Unsubscribing from OPC Server...");
+        opcUaService.unsubscribe(subscriberUid);
+    }
+    
 }
