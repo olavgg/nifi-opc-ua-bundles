@@ -620,8 +620,8 @@ public class StandardOPCUAService extends AbstractControllerService implements O
         SerializationContext context = newDefaultSerializationContext();
         readValueIds.forEach((readValueId) -> {
 
-            Long clientHandleLong = clientHandles.getAndIncrement();
-            UInteger clientHandle = uint(clientHandleLong);
+        Long clientHandleLong = clientHandles.getAndIncrement();
+        UInteger clientHandle = uint(clientHandleLong);
 	    MonitoringParameters parameters = null;
 
 	    if(df != null) {
@@ -802,7 +802,11 @@ public class StandardOPCUAService extends AbstractControllerService implements O
             List<ReadValueId> readValueIds = new ArrayList<>();
             DataChangeFilter df = null;
             for(UaMonitoredItem mi : subscription.getMonitoredItems()) {
-                if(df == null) df = (DataChangeFilter) mi.getMonitoringFilter().decode(context);
+            	try {
+	                if(df == null) df = (DataChangeFilter) mi.getMonitoringFilter().decode(context);
+            	} catch (NullPointerException e) {
+            		// Our subscriptions did not use a monitoring filter
+            	}
                 readValueIds.add(mi.getReadValueId());
             }
 
@@ -816,7 +820,14 @@ public class StandardOPCUAService extends AbstractControllerService implements O
                 putSubToMap(newSub, queue);
             } catch (Exception e) {
                 e.printStackTrace();
-                getLogger().error("Recreating subscription failed!");
+                getLogger().error("Recreating subscription failed!. We'll try to do it again in 60 seconds...");
+                try {
+					Thread.sleep(60000);
+	                onSubscriptionTransferFailed(subscription, statusCode); // Recursive to force our processor to keep trying. 
+	                														// God, I hate this solution...
+				} catch (InterruptedException eInterrupted) {
+					eInterrupted.printStackTrace();
+				}
             }
         }
     }
