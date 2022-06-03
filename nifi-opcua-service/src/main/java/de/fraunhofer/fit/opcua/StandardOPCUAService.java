@@ -471,14 +471,16 @@ public class StandardOPCUAService extends AbstractControllerService implements O
     }
 
     @Override
-    public void unsubscribe(String subscriptionUid) {
+    public void unsubscribe(String subscriptionUid) throws Exception {
 
         if (opcClient == null) {
             getLogger().warn("OPC Client is null. OPC UA service was not enabled properly.");
             return;
         }
 
-        if (subscriptionMap.get(subscriptionUid) != null) {
+        // Sanity check so we don't try to delete something
+		// that does not exist.
+        if (subscriptionMap.get(subscriptionUid) != null) {	
             try {
                 UInteger subId = UInteger.valueOf(subscriptionUid);
                 opcClient.getSubscriptionManager()
@@ -486,6 +488,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
                 subscriptionMap.remove(subscriptionUid);
             } catch (Exception e) {
                 getLogger().warn("Unsubscribe failed: " + e.getMessage());
+                throw e;
             }
         }
 
@@ -810,26 +813,48 @@ public class StandardOPCUAService extends AbstractControllerService implements O
                 readValueIds.add(mi.getReadValueId());
             }
 
-            // Try to clean up the previous subscription first
-            unsubscribe(subscription.getSubscriptionId().toString());
-
-            // Recreate subscription with the previous MonitoredItems
+            int oldNumberSubscriptions = opcClient.getSubscriptionManager().getSubscriptions().size();
             try {
+                // Try to clean up the previous subscription first
+                unsubscribe(subscription.getSubscriptionId().toString());
+                // Recreate subscription with the previous MonitoredItems
                 UaSubscription newSub = createSubscription(minPublishInterval);
                 createMonitorItems(newSub, readValueIds, queue, df);
                 putSubToMap(newSub, queue);
             } catch (Exception e) {
-                e.printStackTrace();
+            	e.printStackTrace();
                 getLogger().error("Recreating subscription failed!. We'll try to do it again in 60 seconds...");
-                try {
-					Thread.sleep(60000);
-	                onSubscriptionTransferFailed(subscription, statusCode); // Recursive to force our processor to keep trying. 
-	                														// God, I hate this solution...
-				} catch (InterruptedException eInterrupted) {
-					eInterrupted.printStackTrace();
-				}
+            	relaunchOnSubscriptionTransferFailed(subscription, statusCode, oldNumberSubscriptions);
             }
         }
+
+		private void relaunchOnSubscriptionTransferFailed(UaSubscription subscription, 
+				StatusCode statusCode, int oldNumberSubscriptions) {
+			
+			try {
+
+            	// Remove the oldest subscription if we've created one before this method failed.
+            	int currentNumberSubscriptions = opcClient.getSubscriptionManager().getSubscriptions().size();
+            	if (oldNumberSubscriptions < currentNumberSubscriptions) {
+            		UaSubscription newSubscription = opcClient.getSubscriptionManager().getSubscriptions().get(currentNumberSubscriptions-1);
+					unsubscribe(newSubscription.getSubscriptionId().toString());
+            	}
+            	
+            	// Relaunch the re-subscription method.
+				Thread.sleep(60000);
+                onSubscriptionTransferFailed(subscription, statusCode); // Recursive to force our processor to keep trying. 
+                														// God, I hate this solution...
+			} catch (InterruptedException eInterrupted) {
+				// Interrupted while sleeping
+				// We won't try to resubscribe again
+				eInterrupted.printStackTrace();
+			} catch (Exception e2) {
+				// Something probably went wrong when unsubscribing from our most recent subscription...
+				// This would leave the controller in a rather undesirable/incomplete state. Not good.
+				e2.printStackTrace();
+			}
+			
+		}
     }
     
 }

@@ -233,8 +233,15 @@ public class SubscribeOPCNodes extends AbstractProcessor {
     }
     
     private void unsubscribe() {
-    	getLogger().debug("Unsubscribing from OPC Server...");
-        opcUaService.unsubscribe(subscriberUid);
+    	
+        try {
+        	getLogger().debug("Unsubscribing from OPC Server...");
+			opcUaService.unsubscribe(subscriberUid);
+		} catch (Exception e) {
+			getLogger().error("Something went wrong when trying to unsubscribe from the OPCUA server."
+					+ "Consider restarting the OPCUA controller.");
+			e.printStackTrace();
+		}
     }
     
 }

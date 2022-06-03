@@ -38,5 +38,5 @@ public interface OPCUAService extends ControllerService {
     String subscribe(List<String> reqTagNames, BlockingQueue<String> queue,
                      boolean tsChangedNotify, long minPublishInterval) throws ProcessException;
 
-    void unsubscribe(String subscriberUid);
+    void unsubscribe(String subscriberUid) throws Exception;
 }

@@ -42,7 +42,7 @@ public class SubscribeOPCNodesTest {
     private StandardOPCUAService service;
 
     @Before
-    public void init() throws InitializationException {
+    public void init() throws Exception {
         testRunner = TestRunners.newTestRunner(SubscribeOPCNodes.class);
 
         // Use partial mock
