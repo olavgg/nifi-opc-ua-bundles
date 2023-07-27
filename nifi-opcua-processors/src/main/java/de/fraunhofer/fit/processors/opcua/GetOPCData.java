@@ -29,6 +29,7 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.StringReader;
@@ -42,7 +43,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Tags({"opc"})
-@CapabilityDescription("Get the data of specified nodes from a OPC UA server.")
+@CapabilityDescription("Get the data of specified nodes from a OPC UA server."
+		+ "BUG CORRECTION: When aggregating data, the fields reserved for "
+		+ "the variables whose source node failed disappeared and consequently, "
+		+ "the outputfile data didn't match the desired schema. "
+		+ "Now, an empty space is left for the failing variable")
 public class GetOPCData extends AbstractProcessor {
 
     private final AtomicReference<String> timestamp = new AtomicReference<>();
@@ -65,6 +70,7 @@ public class GetOPCData extends AbstractProcessor {
             .required(true)
             .sensitive(false)
             .allowableValues("SourceTimestamp", "ServerTimestamp", "Both")
+            .defaultValue("ServerTimestamp")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
@@ -73,6 +79,7 @@ public class GetOPCData extends AbstractProcessor {
             .description("Either get the tag list from the flow file, or from a dynamic property")
             .required(true)
             .allowableValues("Flowfile", "Local File")
+            .defaultValue("Flowfile")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .sensitive(false)
             .build();
@@ -82,6 +89,7 @@ public class GetOPCData extends AbstractProcessor {
             .description("The location of the tag list file")
             .required(true)
             .addValidator(StandardValidators.FILE_EXISTS_VALIDATOR)
+            .dependsOn(TAG_LIST_SOURCE, "Local File")
             .sensitive(false)
             .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
             .build();
@@ -108,8 +116,8 @@ public class GetOPCData extends AbstractProcessor {
             .Builder().name("Aggregate Records")
             .description("Whether to aggregate records. If this is set to true, then variable with the same time stamp will be merged into a single line. This is useful for batch-based data.")
             .required(true)
-            .defaultValue("false")
             .allowableValues("true", "false")
+            .defaultValue("false")
             .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
             .sensitive(false)
             .build();
@@ -234,6 +242,44 @@ public class GetOPCData extends AbstractProcessor {
         byte[] values = opcUAService.getValue(requestedTagnames.get(), timestamp.get(),
                 excludeNullValue.get(), nullValueString);
 
+        // Erase unnecessary carriage returns
+        int num_var=requestedTagnames.get().size();
+		ByteArrayInputStream bis=new  ByteArrayInputStream(values);        
+        BufferedReader br=new BufferedReader(new InputStreamReader(bis));       
+        long num_lines = br.lines().count();
+
+        /*String prueba_str=new String(values);
+        prueba_str=prueba_str.replace("\n", "\\n").replace("\r", "\\r");
+		System.out.println(prueba_str);*/
+
+        if (num_lines != num_var) {
+        	/*System.out.println("Detected useless carriage returns");
+        	System.out.println("Reducing the number of lines in flowfile");
+        	System.out.println("Former number of lines: "+num_lines);
+        	System.out.println("Latter number of lines: "+num_var);
+        	System.out.println("Antes del cambio: "+num_lines);
+    		System.out.println(values);
+    		System.out.println(new String(values));*/
+        	String[] rawMsgs = new String(values).split(System.lineSeparator());
+    		String[] newMsgs = new String[num_var];
+    		int index=0;
+			for(int i=0; i<rawMsgs.length;i++) {
+				if (rawMsgs[i].startsWith("ns=")) {
+					newMsgs[index]=rawMsgs[i].replace("\r","");
+					index++;
+				}else {
+					newMsgs[index-1]+=rawMsgs[i];
+				}
+				//System.out.println("i: "+i+" | length: "+rawMsgs[i].length()+" | index: "+(index-1)+" | Msg: "+newMsgs[index-1]);
+			}
+			String str =String.join(System.lineSeparator(),newMsgs);
+			values =str.getBytes();
+			
+        	/*System.out.println("\r\nDespues del cambio: "+num_var);
+			System.out.println(values);
+			System.out.println(new String(values));*/
+        }
+        
         if(context.getProperty(AGGREGATE_RECORD).asBoolean()) {
             values = mergeRecord(values).getBytes();
             // add csvHeader attribute to flowfile
@@ -278,21 +324,29 @@ public class GetOPCData extends AbstractProcessor {
             VALUE_INDEX = 3;
             STATUS_CODE_INDEX = 4;
         }
-
+        //System.out.println("Values: "+values);
+        //System.out.println("String-Values: "+new String(values));
         String[] rawMsgs = new String(values).split(System.lineSeparator());
         if(rawMsgs.length == 0) return "";
 
         StringBuilder sb = new StringBuilder();
-        // Use the source timestamp of the first element as the timestamp
 
-        boolean tsAppended = false;
+        //boolean tsAppended = false;
+        /* Use the maximum source timestamp of the elements
+           to avoid negative terms when connection fails */
+    	Long maxval=0L;
+        for(int i=0; i<rawMsgs.length;i++) {
+        	String[] fields = rawMsgs[i].trim().split(",");
+        	maxval=Math.max(maxval,Long.parseLong(fields[SOURCE_TS_INDEX]));
+        }
+        sb.append(maxval).append(",");
         for(int i=0; i<rawMsgs.length; i++) {
             String[] fields = rawMsgs[i].trim().split(",");
-            if (!fields[STATUS_CODE_INDEX].equals("0")) continue;
-            if (!tsAppended) {
+            //if (!fields[STATUS_CODE_INDEX].equals("0")) continue;
+            /*if (!tsAppended) {
                 sb.append(fields[SOURCE_TS_INDEX]).append(",");
                 tsAppended = true;
-            }
+            }*/
             sb.append(fields[VALUE_INDEX]);
             if( i < (rawMsgs.length - 1)) sb.append(",");
         }
