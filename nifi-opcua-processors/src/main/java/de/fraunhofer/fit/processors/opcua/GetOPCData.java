@@ -91,7 +91,7 @@ public class GetOPCData extends AbstractProcessor {
             .addValidator(StandardValidators.FILE_EXISTS_VALIDATOR)
             .dependsOn(TAG_LIST_SOURCE, "Local File")
             .sensitive(false)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
 
     public static final PropertyDescriptor EXCLUDE_NULL_VALUE = new PropertyDescriptor

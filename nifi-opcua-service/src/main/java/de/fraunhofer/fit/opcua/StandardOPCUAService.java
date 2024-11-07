@@ -78,7 +78,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
             .description("The opc.tcp address of the opc ua server, e.g. opc.tcp://192.168.0.2:48010")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
 
     public static final PropertyDescriptor SECURITY_POLICY = new PropertyDescriptor
@@ -103,7 +103,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
     public static final PropertyDescriptor APPLICATION_URI = new PropertyDescriptor
             .Builder().name("Application URI")
             .description("The application URI of your OPC-UA client. It must match the \"URI\" field in \"Subject Alternative Name\" of your client certificate. Typically it has the form of \"urn:aaa:bbb\". However, whether this field is checked depends on the implementation of the server. That means, for some servers, it is not necessary to specify this field.")
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .addValidator(Validator.VALID)
             .build();
 
@@ -114,14 +114,14 @@ public class StandardOPCUAService extends AbstractControllerService implements O
                     "If multiple entries exist, the first one is used. " +
                     "Besides, the key should have the same password as the keystore.")
             .addValidator(StandardValidators.FILE_EXISTS_VALIDATOR)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
 
     public static final PropertyDescriptor CLIENT_KS_PASSWORD = new PropertyDescriptor
             .Builder().name("Client Keystore Password")
             .description("The password for the client keystore")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .sensitive(true)
             .build();
 
@@ -139,14 +139,14 @@ public class StandardOPCUAService extends AbstractControllerService implements O
                     "Trust store contains trusted certificates, which are to be used for server identity verification." +
                     "The trust store can contain multiple certificates.")
             .addValidator(StandardValidators.FILE_EXISTS_VALIDATOR)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
 
     public static final PropertyDescriptor TRUSTSTORE_PASSWORD = new PropertyDescriptor
             .Builder().name("Trust store Password")
             .description("The password for the trust store")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .sensitive(true)
             .build();
 
@@ -164,7 +164,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
             .description("The user name to access the OPC UA server (only valid when \"Authentication Policy\" is \"Username\")")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
 
     public static final PropertyDescriptor PASSWORD = new PropertyDescriptor
@@ -173,7 +173,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
             .required(false)
             .sensitive(true)
             .addValidator(Validator.VALID)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
 
     public static final PropertyDescriptor USE_PROXY = new PropertyDescriptor
@@ -183,7 +183,7 @@ public class StandardOPCUAService extends AbstractControllerService implements O
             .required(true)
             .defaultValue("false")
             .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
     
     public static final PropertyDescriptor TIMEOUT = new PropertyDescriptor
